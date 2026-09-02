@@ -64,8 +64,8 @@ def export_encoder(model: torch.nn.Module, path: Path, opset: int) -> None:
         output_names=["cross_k", "cross_v"],
         dynamic_axes={
             "pixel_values": {2: "height", 3: "width"},
-            "cross_k": {3: "encoder_sequence_length"},
-            "cross_v": {3: "encoder_sequence_length"},
+            "cross_k": {2: "encoder_sequence_length"},
+            "cross_v": {2: "encoder_sequence_length"},
         },
         opset_version=opset,
         do_constant_folding=True,
@@ -82,19 +82,19 @@ def export_decoder(model: torch.nn.Module, path: Path, opset: int) -> None:
         torch.full((1, 1), 2, dtype=torch.int32),
         torch.zeros((1, 1, 1, MAX_DECODE_LENGTH + 1), dtype=torch.float32),
         torch.zeros(
-            (DECODER_LAYERS, 1, DECODER_HEADS, visual_tokens, HEAD_DIM),
+            (DECODER_LAYERS, DECODER_HEADS, visual_tokens, HEAD_DIM),
             dtype=torch.float32,
         ),
         torch.zeros(
-            (DECODER_LAYERS, 1, DECODER_HEADS, visual_tokens, HEAD_DIM),
+            (DECODER_LAYERS, DECODER_HEADS, visual_tokens, HEAD_DIM),
             dtype=torch.float32,
         ),
         torch.zeros(
-            (DECODER_LAYERS, 1, DECODER_HEADS, MAX_DECODE_LENGTH, HEAD_DIM),
+            (DECODER_LAYERS, DECODER_HEADS, MAX_DECODE_LENGTH, HEAD_DIM),
             dtype=torch.float32,
         ),
         torch.zeros(
-            (DECODER_LAYERS, 1, DECODER_HEADS, MAX_DECODE_LENGTH, HEAD_DIM),
+            (DECODER_LAYERS, DECODER_HEADS, MAX_DECODE_LENGTH, HEAD_DIM),
             dtype=torch.float32,
         ),
     )
@@ -113,8 +113,8 @@ def export_decoder(model: torch.nn.Module, path: Path, opset: int) -> None:
         ],
         output_names=["logits", "new_keys", "new_values"],
         dynamic_axes={
-            "cross_k": {3: "encoder_sequence_length"},
-            "cross_v": {3: "encoder_sequence_length"},
+            "cross_k": {2: "encoder_sequence_length"},
+            "cross_v": {2: "encoder_sequence_length"},
         },
         opset_version=opset,
         do_constant_folding=True,
@@ -125,7 +125,7 @@ def export_decoder(model: torch.nn.Module, path: Path, opset: int) -> None:
 
 def write_contract(path: Path, opset: int) -> None:
     contract = {
-        "version": 1,
+        "version": 2,
         "opset": opset,
         "layout": "NCHW",
         "image_normalization": "RGB float32, (x/255 - 0.5) / 0.5",
@@ -144,6 +144,7 @@ def write_contract(path: Path, opset: int) -> None:
             "heads": DECODER_HEADS,
             "head_dim": HEAD_DIM,
             "cache_capacity": MAX_DECODE_LENGTH,
+            "public_kv_layout": "layers,heads,sequence,head_dim",
         },
     }
     path.write_text(json.dumps(contract, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

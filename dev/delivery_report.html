@@ -24,6 +24,7 @@
     <h2>结论</h2>
     <div class="cards">
       <div class="card"><b class="ok">4 / 4 ONNX 通过</b>给定图片在四档均输出“已处理”。</div>
+      <div class="card"><b class="ok">公开张量 rank ≤ 4</b>Encoder 与 decoder 均已满足 OMG 维度数量限制。</div>
       <div class="card"><b class="ok">交付检查通过</b>Ruff、2 个 pytest、3 个 shell 语法检查通过。</div>
       <div class="card"><b class="warn">OM 待 Linux 转换</b>必须使用目标设备匹配的 CANN Kit 与精确 SoC。</div>
       <div class="card"><b class="warn">真机待验证</b>本机无 DevEco/HarmonyOS SDK、目标 NPU 与 OM。</div>
@@ -35,16 +36,16 @@
     <table>
       <thead><tr><th>宽×高</th><th>NCHW</th><th>视觉 token</th><th>结果</th><th>Encoder / Decoder</th></tr></thead>
       <tbody>
-        <tr><td>384×512</td><td>[1,3,512,384]</td><td>192</td><td class="ok">已处理</td><td>255.599 / 15.182 ms</td></tr>
-        <tr><td>576×768</td><td>[1,3,768,576]</td><td>432</td><td class="ok">已处理</td><td>524.160 / 15.899 ms</td></tr>
-        <tr><td>768×1024</td><td>[1,3,1024,768]</td><td>768</td><td class="ok">已处理</td><td>867.090 / 17.936 ms</td></tr>
-        <tr><td>960×1408</td><td>[1,3,1408,960]</td><td>1320</td><td class="ok">已处理</td><td>1388.521 / 18.302 ms</td></tr>
+        <tr><td>384×512</td><td>[1,3,512,384]</td><td>192</td><td class="ok">已处理</td><td>373.395 / 26.556 ms</td></tr>
+        <tr><td>576×768</td><td>[1,3,768,576]</td><td>432</td><td class="ok">已处理</td><td>1032.357 / 27.404 ms</td></tr>
+        <tr><td>768×1024</td><td>[1,3,1024,768]</td><td>768</td><td class="ok">已处理</td><td>1634.480 / 23.740 ms</td></tr>
+        <tr><td>960×1408</td><td>[1,3,1408,960]</td><td>1320</td><td class="ok">已处理</td><td>2733.028 / 27.821 ms</td></tr>
       </tbody>
     </table>
     <p class="note">时间来自本机 CPU ONNX Runtime，decoder 只生成到成功判定所需 token；不是手机 NPU 性能数据。四档 token 均为 <code>0, 23709, 11536</code>。</p>
     <h3>产物 SHA-256</h3>
-    <pre>encoder.onnx   99189a2d90b4c7c8f48476064b03fefaa4b825ac7de6dea8abfcac91f8f46da3
-decoder.onnx   858a0e1603b26142787c182d40635699c34886901646751e85fdc84e679ba0de
+    <pre>encoder.onnx   c9f7b6ba0866c31dee532bc633a0ef723704cbd287570735884384017eb55663
+decoder.onnx   f8a3252b3ace1bdf2ce6f19d629b910123ae7c3ee2d45c982192ef258559ccf7
 tokenizer.bin  c8e305c5f57777c013d9c9f0ce4bcf1885c8379769def68b90afaf8bde0491db
 verify.png     76db2cf2ec8914c87bf2bc6e485d106198b47c96b9723adc3d0ca5e4799564f7</pre>
   </section>
@@ -52,7 +53,8 @@ verify.png     76db2cf2ec8914c87bf2bc6e485d106198b47c96b9723adc3d0ca5e4799564f7<
     <h2>为 OM/NPU 做的改造</h2>
     <ul>
       <li>Encoder 预计算 decoder 六层 cross-attention K/V，减少端侧逐层投影。</li>
-      <li>Decoder 将 12 个 cache 合并为 <code>[6,1,6,2048,128]</code> 的 K/V，并只返回当前步增量。</li>
+      <li>固定 batch 为 1，因此公开 K/V 省略单例 batch 轴；cross K/V 为 <code>[6,6,S,128]</code>，cache 为 <code>[6,6,2048,128]</code>，所有公开张量 rank ≤ 4。</li>
+      <li>Decoder 内部恢复 batch 轴后执行原注意力计算，并只返回 <code>[6,6,1,128]</code> 的当前步增量；元素顺序和缓冲区字节数不变。</li>
       <li>动态维度限制为四个 gear；float I/O 目标为 FP16，token/position 保持 INT32。</li>
       <li>预处理采用等比双三次缩放、左上对齐、右/下补白；验证图居中补白会使三个档位开头错误。</li>
       <li>App 指定 NPU 顺序并关闭 fallback；不支持时显式失败，不静默退回 CPU。</li>
@@ -61,7 +63,7 @@ verify.png     76db2cf2ec8914c87bf2bc6e485d106198b47c96b9723adc3d0ca5e4799564f7<
   <section>
     <h2>端侧验证闭环</h2>
     <ol>
-      <li>Linux 设置精确 <code>PLATFORM</code>，使用 OMG 运行 <code>scripts/convert_to_om.sh</code>。</li>
+      <li>Linux 设置精确 <code>PLATFORM</code>，使用更新后的 OMG 参数运行 <code>scripts/convert_to_om.sh</code>；decoder 输入 shape 已改为四维 K/V。</li>
       <li>将两份 OM 放入 README 指定的 rawfile 路径。</li>
       <li>DevEco Studio 构建 arm64 HAP，真机运行内置验证图。</li>
       <li>采集 <code>hdc shell hilog | grep UniRecOM</code>；应结束于 <code>DONE/SUCCESS</code>，或唯一一条终止性 <code>FATAL</code>。</li>

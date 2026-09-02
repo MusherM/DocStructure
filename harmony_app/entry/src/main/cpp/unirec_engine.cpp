@@ -172,15 +172,15 @@ bool UniRecEngine::ValidateContract(const Gear &gear)
         return false;
     }
     const auto expectedCross = std::vector<int32_t> {
-        DECODER_LAYERS, 1, DECODER_HEADS, gear.visualTokens, HEAD_DIM};
+        DECODER_LAYERS, DECODER_HEADS, gear.visualTokens, HEAD_DIM};
     if (encoder_.OutputShape(0) != expectedCross || encoder_.OutputShape(1) != expectedCross ||
         decoder_.InputShape(3) != expectedCross || decoder_.InputShape(4) != expectedCross) {
         DiagnosticLog::Fatal("IO_CONTRACT", "CROSS_KV_SHAPE", gear.name);
         return false;
     }
     if (!ShapeEquals(decoder_.OutputShape(0), {1, VOCAB_SIZE}) ||
-        !ShapeEquals(decoder_.OutputShape(1), {DECODER_LAYERS, 1, DECODER_HEADS, 1, HEAD_DIM}) ||
-        !ShapeEquals(decoder_.OutputShape(2), {DECODER_LAYERS, 1, DECODER_HEADS, 1, HEAD_DIM})) {
+        !ShapeEquals(decoder_.OutputShape(1), {DECODER_LAYERS, DECODER_HEADS, 1, HEAD_DIM}) ||
+        !ShapeEquals(decoder_.OutputShape(2), {DECODER_LAYERS, DECODER_HEADS, 1, HEAD_DIM})) {
         DiagnosticLog::Fatal("IO_CONTRACT", "DECODER_OUTPUT_SHAPE", gear.name);
         return false;
     }

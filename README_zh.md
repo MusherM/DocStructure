@@ -17,18 +17,21 @@ English: [README.md](README.md)
 
 | 档位 | Encoder 输入 | 视觉 token 数 | Encoder `cross_k/cross_v` |
 |---|---:|---:|---:|
-| 384×512 | `[1,3,512,384]` | 192 | `[6,1,6,192,128]` |
-| 576×768 | `[1,3,768,576]` | 432 | `[6,1,6,432,128]` |
-| 768×1024 | `[1,3,1024,768]` | 768 | `[6,1,6,768,128]` |
-| 960×1408 | `[1,3,1408,960]` | 1320 | `[6,1,6,1320,128]` |
+| 384×512 | `[1,3,512,384]` | 192 | `[6,6,192,128]` |
+| 576×768 | `[1,3,768,576]` | 432 | `[6,6,432,128]` |
+| 768×1024 | `[1,3,1024,768]` | 768 | `[6,6,768,128]` |
+| 960×1408 | `[1,3,1408,960]` | 1320 | `[6,6,1320,128]` |
 
 整个 Demo 只有一个 encoder 模型和一个 decoder 模型。Decoder 包含四个关联的视觉序列档位，自注意力 cache 容量固定为 2048 token：
 
 ```text
-past_keys / past_values: [6,1,6,2048,128]
-new_keys  / new_values:  [6,1,6,1,128]
+past_keys / past_values: [6,6,2048,128]
+new_keys  / new_values:  [6,6,1,128]
 logits:                    [1,56371]
 ```
+
+为兼容 OMG，所有公开 ONNX 张量的维度数量均不超过 4。由于 batch 大小固定为 1，wrapper
+在公开 K/V 张量中省略该单例 batch 轴，并在 decoder 内部恢复，不改变注意力语义和连续元素顺序。
 
 固定容量 cache 避免每生成一个 token 就引入一个新的动态 shape。App 每步只更新当前 cache 槽位。代价是每步自注意力都要对带 mask 的 2048 槽 cache 计算；这种方式更容易转为 OM，但可能比真正的可变长度 cache 更慢。
 
@@ -104,7 +107,9 @@ Encoder 会预计算 decoder 六层 cross-attention 的 K/V。Decoder 将 12 个
   已处理
 ```
 
-验证器会用 ONNX Checker 检查两个模型、检查每一档 K/V shape、使用 ONNX Runtime 执行 encoder + 固定 cache decoder，并写出 `verify_report.json`。本机已验证结果：
+验证器会用 ONNX Checker 检查两个模型、拒绝任何维度数量超过 4 的公开张量、检查每一档
+K/V shape、使用 ONNX Runtime 执行 encoder + 固定 cache decoder，并写出
+`verify_report.json`。本机已验证结果：
 
 | 档位 | 结果 | Token ID |
 |---|---|---|

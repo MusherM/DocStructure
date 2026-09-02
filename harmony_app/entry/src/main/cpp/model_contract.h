@@ -51,12 +51,11 @@ inline std::vector<std::vector<int32_t>> DecoderShapes(const Gear &gear)
         {1, 1},
         {1, 1},
         {1, 1, 1, CACHE_CAPACITY + 1},
-        {DECODER_LAYERS, 1, DECODER_HEADS, gear.visualTokens, HEAD_DIM},
-        {DECODER_LAYERS, 1, DECODER_HEADS, gear.visualTokens, HEAD_DIM},
-        {DECODER_LAYERS, 1, DECODER_HEADS, CACHE_CAPACITY, HEAD_DIM},
-        {DECODER_LAYERS, 1, DECODER_HEADS, CACHE_CAPACITY, HEAD_DIM},
+        {DECODER_LAYERS, DECODER_HEADS, gear.visualTokens, HEAD_DIM},
+        {DECODER_LAYERS, DECODER_HEADS, gear.visualTokens, HEAD_DIM},
+        {DECODER_LAYERS, DECODER_HEADS, CACHE_CAPACITY, HEAD_DIM},
+        {DECODER_LAYERS, DECODER_HEADS, CACHE_CAPACITY, HEAD_DIM},
     };
 }
 
 #endif
-

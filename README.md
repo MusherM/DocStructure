@@ -17,18 +17,22 @@ The requested sizes are interpreted as **width × height**. Runtime tensors use 
 
 | Gear | Encoder input | Visual tokens | Encoder `cross_k/cross_v` |
 |---|---:|---:|---:|
-| 384×512 | `[1,3,512,384]` | 192 | `[6,1,6,192,128]` |
-| 576×768 | `[1,3,768,576]` | 432 | `[6,1,6,432,128]` |
-| 768×1024 | `[1,3,1024,768]` | 768 | `[6,1,6,768,128]` |
-| 960×1408 | `[1,3,1408,960]` | 1320 | `[6,1,6,1320,128]` |
+| 384×512 | `[1,3,512,384]` | 192 | `[6,6,192,128]` |
+| 576×768 | `[1,3,768,576]` | 432 | `[6,6,432,128]` |
+| 768×1024 | `[1,3,1024,768]` | 768 | `[6,6,768,128]` |
+| 960×1408 | `[1,3,1408,960]` | 1320 | `[6,6,1320,128]` |
 
 There is exactly one encoder model and one decoder model. The decoder has four linked visual-sequence gears. Its self-attention cache capacity is fixed at 2048 tokens:
 
 ```text
-past_keys / past_values: [6,1,6,2048,128]
-new_keys  / new_values:  [6,1,6,1,128]
+past_keys / past_values: [6,6,2048,128]
+new_keys  / new_values:  [6,6,1,128]
 logits:                    [1,56371]
 ```
+
+All public ONNX tensors have rank four or less for OMG compatibility. Because batch size is
+fixed at one, the wrappers omit the singleton batch axis from public K/V tensors and restore it
+inside the decoder without changing attention semantics or contiguous element order.
 
 The fixed-capacity cache avoids a new dynamic shape at every generated token. The app updates only the current cache slot. The trade-off is that self-attention computes against a masked 2048-slot cache each step; this is more OM-friendly but can be slower than a truly variable-length cache.
 
@@ -104,7 +108,9 @@ The supplied verification image is [model_tools/assets/verify.png](model_tools/a
   已处理
 ```
 
-The verifier checks both models with ONNX Checker, checks every K/V shape, runs encoder + fixed-cache decoder in ONNX Runtime, and writes `verify_report.json`. The local verified result was:
+The verifier checks both models with ONNX Checker, rejects any public tensor above rank four,
+checks every K/V shape, runs encoder + fixed-cache decoder in ONNX Runtime, and writes
+`verify_report.json`. The local verified result was:
 
 | Gear | Result | Token IDs |
 |---|---|---|

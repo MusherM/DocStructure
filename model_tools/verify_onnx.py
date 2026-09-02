@@ -49,6 +49,16 @@ def describe_model(path: Path) -> dict[str, object]:
     }
 
 
+def assert_public_tensor_ranks(path: Path, maximum: int = 4) -> None:
+    model = onnx.load(path, load_external_data=False)
+    for value in (*model.graph.input, *model.graph.output):
+        rank = len(value.type.tensor_type.shape.dim)
+        if rank > maximum:
+            raise RuntimeError(
+                f"{path}: public tensor {value.name!r} has rank {rank}, max {maximum}"
+            )
+
+
 def decode_until_prefix_decidable(
     decoder: ort.InferenceSession,
     cross_k: np.ndarray,
@@ -58,7 +68,7 @@ def decode_until_prefix_decidable(
     max_new_tokens: int,
 ) -> tuple[str, list[int], float]:
     past_keys = np.zeros(
-        (DECODER_LAYERS, 1, DECODER_HEADS, MAX_DECODE_LENGTH, HEAD_DIM),
+        (DECODER_LAYERS, DECODER_HEADS, MAX_DECODE_LENGTH, HEAD_DIM),
         dtype=np.float32,
     )
     past_values = np.zeros_like(past_keys)
@@ -83,8 +93,8 @@ def decode_until_prefix_decidable(
         logits, new_keys, new_values = outputs
         next_token = int(np.argmax(logits[0]))
         generated.append(next_token)
-        past_keys[:, :, :, step : step + 1, :] = new_keys
-        past_values[:, :, :, step : step + 1, :] = new_values
+        past_keys[:, :, step : step + 1, :] = new_keys
+        past_values[:, :, step : step + 1, :] = new_values
         mask[..., step] = 0.0
 
         text = clean_decoded_text("".join(tokens[token] for token in generated))
@@ -103,6 +113,8 @@ def main() -> None:
     encoder_path = args.model_dir / "unirec_encoder.onnx"
     decoder_path = args.model_dir / "unirec_decoder.onnx"
     tokenizer_path = args.model_dir / "unirec_tokenizer.bin"
+    assert_public_tensor_ranks(encoder_path)
+    assert_public_tensor_ranks(decoder_path)
     tokens, special = read_tokenizer_binary(tokenizer_path)
     if special != {"bos": BOS_TOKEN_ID, "eos": EOS_TOKEN_ID, "pad": PAD_TOKEN_ID}:
         raise RuntimeError(f"Unexpected special token IDs: {special}")
@@ -126,7 +138,6 @@ def main() -> None:
         encoder_ms = (time.perf_counter() - started) * 1000.0
         expected_shape = (
             DECODER_LAYERS,
-            1,
             DECODER_HEADS,
             gear.visual_tokens,
             HEAD_DIM,
@@ -175,4 +186,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
