@@ -4,7 +4,7 @@ English: [README.md](README.md)
 
 本仓库包含两个交付部分：
 
-1. 可复现的 UniRec-0.1B 导出链路：生成一份动态档位 encoder ONNX 和一份动态档位 decoder ONNX，验证全部四档，并提供在 Linux 上生成一份动态档位 encoder OM 与一份动态档位 decoder OM 的 OMG 脚本。
+1. 可复现的 UniRec-0.1B 导出链路：生成一份动态档位 encoder ONNX 和一份动态档位 decoder ONNX，验证全部四档，并在 README 中提供可直接复制的 Linux OMG 转换命令。
 2. 原生 HarmonyOS App：通过 CANN Kit/NNRt 加载这两个 OM，为输入图片选择档位，执行 encoder + 自回归 decoder 推理，并在端侧解码 token。
 
 本仓库不会声称 OM 已完成转换：你必须在 Linux 上使用与目标手机精确匹配的 CANN Kit/工具链手动完成。OMG 转换成功并不能证明 OM 与手机兼容，也不能证明模型能完整运行在手机 NPU 上。
@@ -120,28 +120,37 @@ K/V shape、使用 ONNX Runtime 执行 encoder + 固定 cache decoder，并写�
 
 ### 4. 在 Linux 上转换为一对动态档位 OM
 
-必须使用与目标 HarmonyOS 设备匹配的 CANN Kit OMG 转换工具链。不要猜测 `PLATFORM`，也不要因为 OMG 能接受参数就拿其他平台代替目标平台。先加载工具链环境，再运行：
+必须使用与目标 HarmonyOS 设备匹配的 CANN Kit OMG 转换工具链。加载环境、进入仓库根目录后，直接执行以下命令：
 
 ```bash
 source /path/to/cann/set_env.sh
-PLATFORM='<CANN Kit 包/目标设备文档给出的精确目标平台>' \
-  ./scripts/convert_to_om.sh model_tools/output om_output
-```
+mkdir -p om_output
 
-脚本只生成：
+omg --framework=5 \
+  --model=./model_tools/output/unirec_encoder.onnx \
+  --output=./om_output/unirec_encoder \
+  --input_shape="pixel_values:1,3,-1,-1" \
+  --dynamic_dims="512,384;768,576;1024,768;1408,960" \
+  --input_type="pixel_values:FP16" \
+  --output_type="cross_k:FP16;cross_v:FP16" \
+  --weight_data_type=FP16 2>&1 | tee ./om_output/omg_encoder.log
 
-```text
-om_output/
-├── unirec_encoder.om      # 四个 H/W 档位
-├── unirec_decoder.om      # 四个关联视觉 token 档位
-├── omg_encoder.log
-├── omg_decoder.log
-└── SHA256SUMS
+omg --framework=5 \
+  --model=./model_tools/output/unirec_decoder.onnx \
+  --output=./om_output/unirec_decoder \
+  --input_shape="input_ids:1,1;position_ids:1,1;self_attention_mask:1,1,1,2049;cross_k:6,6,-1,128;cross_v:6,6,-1,128;past_keys:6,6,2048,128;past_values:6,6,2048,128" \
+  --dynamic_dims="192,192;432,432;768,768;1320,1320" \
+  --input_type="input_ids:INT32;position_ids:INT32;self_attention_mask:FP16;cross_k:FP16;cross_v:FP16;past_keys:FP16;past_values:FP16" \
+  --output_type="logits:FP16;new_keys:FP16;new_values:FP16" \
+  --weight_data_type=FP16 2>&1 | tee ./om_output/omg_decoder.log
+
+sha256sum ./om_output/unirec_encoder.om ./om_output/unirec_decoder.om \
+  | tee ./om_output/SHA256SUMS
 ```
 
 Encoder 动态维度为 `512,384;768,576;1024,768;1408,960`。Decoder 针对 `cross_k` 和 `cross_v` 的动态维度对为 `192,192;432,432;768,768;1320,1320`。浮点模型输入/输出编译为 FP16 以减少内存流量，token 与位置输入保持 INT32。
 
-脚本默认调用 `omg`；如果可执行文件不在 `PATH` 中，可通过 `OMG_BIN` 指定。脚本使用 OMG 面向 ONNX 的 `--input_type` 和 `--output_type` 映射；由于 `--input_fp16_nodes` 对 ONNX 不生效，脚本不会使用该参数。通用 Ascend Toolkit 生成的 OM 不会自动成为可用于手机 CANN Kit 的 OM。
+命令使用 OMG 面向 ONNX 的 `--input_type` 和 `--output_type` 映射；由于 `--input_fp16_nodes` 对 ONNX 不生效，因此不使用该参数。如果当前 CANN Kit 版本要求 `--platform`，请追加目标设备文档给出的精确平台值，不要猜测。通用 Ascend Toolkit 生成的 OM 不会自动成为可用于手机 CANN Kit 的 OM。
 
 ## 第二部分：原生 HarmonyOS App
 
@@ -234,7 +243,7 @@ hdc shell hilog | grep UniRecOM
 model_tools/                 Python 导出、预处理、tokenizer、验证
 scripts/export_onnx.sh       可复现 ONNX 导出封装
 scripts/verify_onnx.sh       四档 ONNX 正确性检查
-scripts/convert_to_om.sh     Linux 手工 OMG 动态档位转换
+README.md / README_zh.md     可直接复制的 Linux OMG 转换命令
 harmony_app/                 原生 HarmonyOS CANN Kit/NNRt App
 dev/                         交付与验证报告
 ```

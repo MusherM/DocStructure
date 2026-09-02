@@ -4,7 +4,7 @@
 
 This repository contains two deliverables:
 
-1. A reproducible UniRec-0.1B export pipeline that produces one dynamic-gear encoder ONNX and one dynamic-gear decoder ONNX, verifies all four gears, and provides a Linux OMG script for producing one dynamic-gear encoder OM and one dynamic-gear decoder OM.
+1. A reproducible UniRec-0.1B export pipeline that produces one dynamic-gear encoder ONNX and one dynamic-gear decoder ONNX, verifies all four gears, and documents copy-ready Linux OMG commands for producing the OM pair.
 2. A native HarmonyOS app that loads those two OM files through CANN Kit/NNRt, selects a gear for the input image, runs encoder + autoregressive decoder inference, and decodes tokens locally.
 
 OM conversion is intentionally not claimed as completed here: it must be run in your Linux CANN Kit/toolchain environment for the exact target phone SoC. A successful OMG conversion is not proof that the OM is compatible with a phone or fully executable on its NPU.
@@ -121,28 +121,37 @@ checks every K/V shape, runs encoder + fixed-cache decoder in ONNX Runtime, and 
 
 ### 4. Convert to a single dynamic-gear OM pair on Linux
 
-Use the CANN Kit OMG conversion toolchain that matches the target HarmonyOS device. Do not guess `PLATFORM`, and do not substitute another platform merely because OMG accepts it. Source the toolchain environment first, then run:
+Use the CANN Kit OMG conversion toolchain that matches the target HarmonyOS device. Source its environment, change to the repository root, then run these commands directly:
 
 ```bash
 source /path/to/cann/set_env.sh
-PLATFORM='<exact target platform from your CANN Kit package/device documentation>' \
-  ./scripts/convert_to_om.sh model_tools/output om_output
-```
+mkdir -p om_output
 
-The script creates exactly:
+omg --framework=5 \
+  --model=./model_tools/output/unirec_encoder.onnx \
+  --output=./om_output/unirec_encoder \
+  --input_shape="pixel_values:1,3,-1,-1" \
+  --dynamic_dims="512,384;768,576;1024,768;1408,960" \
+  --input_type="pixel_values:FP16" \
+  --output_type="cross_k:FP16;cross_v:FP16" \
+  --weight_data_type=FP16 2>&1 | tee ./om_output/omg_encoder.log
 
-```text
-om_output/
-├── unirec_encoder.om      # four H/W gears
-├── unirec_decoder.om      # four linked visual-token gears
-├── omg_encoder.log
-├── omg_decoder.log
-└── SHA256SUMS
+omg --framework=5 \
+  --model=./model_tools/output/unirec_decoder.onnx \
+  --output=./om_output/unirec_decoder \
+  --input_shape="input_ids:1,1;position_ids:1,1;self_attention_mask:1,1,1,2049;cross_k:6,6,-1,128;cross_v:6,6,-1,128;past_keys:6,6,2048,128;past_values:6,6,2048,128" \
+  --dynamic_dims="192,192;432,432;768,768;1320,1320" \
+  --input_type="input_ids:INT32;position_ids:INT32;self_attention_mask:FP16;cross_k:FP16;cross_v:FP16;past_keys:FP16;past_values:FP16" \
+  --output_type="logits:FP16;new_keys:FP16;new_values:FP16" \
+  --weight_data_type=FP16 2>&1 | tee ./om_output/omg_decoder.log
+
+sha256sum ./om_output/unirec_encoder.om ./om_output/unirec_decoder.om \
+  | tee ./om_output/SHA256SUMS
 ```
 
 Encoder dynamic dimensions are `512,384;768,576;1024,768;1408,960`. Decoder dynamic dimension pairs are `192,192;432,432;768,768;1320,1320` for `cross_k` and `cross_v`. Float model inputs/outputs are compiled as FP16 to reduce memory traffic, while token and position inputs remain INT32.
 
-The script invokes `omg` by default. Set `OMG_BIN` if the executable is not on `PATH`. It uses OMG's ONNX-aware `--input_type` and `--output_type` mappings; `--input_fp16_nodes` is intentionally not used because it has no effect for ONNX. An OM produced by a generic Ascend Toolkit is not automatically a mobile CANN Kit OM.
+The commands use OMG's ONNX-aware `--input_type` and `--output_type` mappings; `--input_fp16_nodes` is intentionally not used because it has no effect for ONNX. If your CANN Kit release requires `--platform`, append the exact target platform documented for the device; do not guess one. An OM produced by a generic Ascend Toolkit is not automatically a mobile CANN Kit OM.
 
 ## Part 2: native HarmonyOS app
 
@@ -235,7 +244,7 @@ Keep the complete log from process start through either `DONE/SUCCESS` or the si
 model_tools/                 Python export, preprocessing, tokenizer, verification
 scripts/export_onnx.sh       Reproducible ONNX export wrapper
 scripts/verify_onnx.sh       Four-gear ONNX correctness check
-scripts/convert_to_om.sh     Manual Linux OMG dynamic-gear conversion
+README.md / README_zh.md     Copy-ready Linux OMG conversion commands
 harmony_app/                 Native HarmonyOS CANN Kit/NNRt app
 dev/                         Delivery and verification report
 ```

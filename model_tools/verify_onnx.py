@@ -49,14 +49,19 @@ def describe_model(path: Path) -> dict[str, object]:
     }
 
 
-def assert_public_tensor_ranks(path: Path, maximum: int = 4) -> None:
+def assert_omg_compatible_graph(path: Path, maximum_rank: int = 4) -> None:
     model = onnx.load(path, load_external_data=False)
-    for value in (*model.graph.input, *model.graph.output):
+    inferred = onnx.shape_inference.infer_shapes(model, strict_mode=True, data_prop=True)
+    values = (*inferred.graph.input, *inferred.graph.output, *inferred.graph.value_info)
+    for value in values:
         rank = len(value.type.tensor_type.shape.dim)
-        if rank > maximum:
+        if rank > maximum_rank:
             raise RuntimeError(
-                f"{path}: public tensor {value.name!r} has rank {rank}, max {maximum}"
+                f"{path}: tensor {value.name!r} has rank {rank}, max {maximum_rank}"
             )
+    if_nodes = [node.name or "<unnamed>" for node in model.graph.node if node.op_type == "If"]
+    if if_nodes:
+        raise RuntimeError(f"{path}: OMG-incompatible If nodes: {if_nodes}")
 
 
 def decode_until_prefix_decidable(
@@ -113,8 +118,8 @@ def main() -> None:
     encoder_path = args.model_dir / "unirec_encoder.onnx"
     decoder_path = args.model_dir / "unirec_decoder.onnx"
     tokenizer_path = args.model_dir / "unirec_tokenizer.bin"
-    assert_public_tensor_ranks(encoder_path)
-    assert_public_tensor_ranks(decoder_path)
+    assert_omg_compatible_graph(encoder_path)
+    assert_omg_compatible_graph(decoder_path)
     tokens, special = read_tokenizer_binary(tokenizer_path)
     if special != {"bos": BOS_TOKEN_ID, "eos": EOS_TOKEN_ID, "pad": PAD_TOKEN_ID}:
         raise RuntimeError(f"Unexpected special token IDs: {special}")

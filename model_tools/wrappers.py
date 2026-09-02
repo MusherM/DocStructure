@@ -38,9 +38,9 @@ class EncoderForOm(nn.Module):
         for attention in self.cross_attentions:
             keys.append(attention._shape(attention.k_proj(hidden_states), -1, batch_size))
             values.append(attention._shape(attention.v_proj(hidden_states), -1, batch_size))
-        # Batch size is fixed to one. Keep the public OM boundary at rank four;
-        # OMG rejects tensor descriptors with more than four dimensions.
-        return torch.stack(keys, dim=0).squeeze(1), torch.stack(values, dim=0).squeeze(1)
+        # Batch size is fixed to one. Concatenating that axis directly produces
+        # [layers, heads, sequence, head_dim] without a rank-five intermediate.
+        return torch.cat(keys, dim=0), torch.cat(values, dim=0)
 
 
 class DecoderStepForOm(nn.Module):
@@ -83,12 +83,6 @@ class DecoderStepForOm(nn.Module):
         past_keys: torch.Tensor,
         past_values: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        # Restore the fixed batch axis used by the original attention code.
-        cross_k = cross_k.unsqueeze(1)
-        cross_v = cross_v.unsqueeze(1)
-        past_keys = past_keys.unsqueeze(1)
-        past_values = past_values.unsqueeze(1)
-
         hidden_states = self.decoder.embed_tokens(input_ids)
         flat_positions = position_ids.reshape(-1)
         positions = self.decoder.embed_positions.weights.index_select(0, flat_positions)
@@ -109,8 +103,8 @@ class DecoderStepForOm(nn.Module):
             current_value = layer.self_attn._shape(
                 layer.self_attn.v_proj(normalized), 1, normalized.shape[0]
             )
-            self_key = torch.cat((past_keys[layer_index], current_key), dim=2)
-            self_value = torch.cat((past_values[layer_index], current_value), dim=2)
+            self_key = torch.cat((past_keys[layer_index], current_key[0]), dim=1)
+            self_value = torch.cat((past_values[layer_index], current_value[0]), dim=1)
             hidden_states = residual + self._attention(
                 layer.self_attn,
                 normalized,
@@ -141,6 +135,6 @@ class DecoderStepForOm(nn.Module):
         logits = self.lm_head(hidden_states[:, 0, :])
         return (
             logits,
-            torch.stack(new_keys, dim=0).squeeze(1),
-            torch.stack(new_values, dim=0).squeeze(1),
+            torch.cat(new_keys, dim=0),
+            torch.cat(new_values, dim=0),
         )
