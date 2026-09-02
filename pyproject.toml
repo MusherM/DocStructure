@@ -1,0 +1,28 @@
+[project]
+name = "unirec-dynamic-om-demo"
+version = "0.1.0"
+description = "Export and verify UniRec-0.1B ONNX models for dynamic-gear OM deployment."
+requires-python = ">=3.10,<3.13"
+dependencies = [
+  "numpy>=1.26,<2.0",
+  "onnx==1.17.0",
+  "onnxruntime==1.20.1",
+  "pillow>=10.4,<12",
+  "safetensors>=0.4.5,<1",
+  "torch==2.5.1",
+  "transformers==4.45.1",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3,<9",
+  "ruff>=0.8,<1",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["model_tools/tests"]
+pythonpath = ["."]

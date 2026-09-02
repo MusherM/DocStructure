@@ -1,0 +1,8 @@
+{
+  "string": [
+    { "name": "module_desc", "value": "UniRec dynamic OM demo" },
+    { "name": "EntryAbility_desc", "value": "UniRec dynamic OM demo" },
+    { "name": "EntryAbility_label", "value": "UniRec Dynamic OM" }
+  ]
+}
+

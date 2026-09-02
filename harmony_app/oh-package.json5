@@ -1,0 +1,9 @@
+{
+  "modelVersion": "5.0.0",
+  "name": "unirec-dynamic-om-demo",
+  "version": "1.0.0",
+  "description": "UniRec-0.1B dynamic-gear OM inference demo",
+  "dependencies": {},
+  "devDependencies": {}
+}
+

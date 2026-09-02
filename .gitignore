@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+model_tools/work/
+model_tools/models/
+model_tools/output/
+harmony_app/entry/src/main/resources/rawfile/models/*.om
+harmony_app/entry/src/main/resources/rawfile/models/*.json
+harmony_app/.hvigor/
+harmony_app/**/build/
+harmony_app/oh_modules/
