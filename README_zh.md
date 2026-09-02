@@ -4,10 +4,10 @@ English: [README.md](README.md)
 
 本仓库包含两个交付部分：
 
-1. 可复现的 UniRec-0.1B 导出链路：生成一份动态档位 encoder ONNX 和一份动态档位 decoder ONNX，验证全部四档，并提供在 Linux 上生成一份动态档位 encoder OM 与一份动态档位 decoder OM 的 ATC 脚本。
+1. 可复现的 UniRec-0.1B 导出链路：生成一份动态档位 encoder ONNX 和一份动态档位 decoder ONNX，验证全部四档，并提供在 Linux 上生成一份动态档位 encoder OM 与一份动态档位 decoder OM 的 OMG 脚本。
 2. 原生 HarmonyOS App：通过 CANN Kit/NNRt 加载这两个 OM，为输入图片选择档位，执行 encoder + 自回归 decoder 推理，并在端侧解码 token。
 
-本仓库不会声称 OM 已完成转换：你必须在 Linux 上使用与目标手机精确匹配的 CANN Kit/工具链手动完成。ATC 转换成功并不能证明 OM 与手机兼容，也不能证明模型能完整运行在手机 NPU 上。
+本仓库不会声称 OM 已完成转换：你必须在 Linux 上使用与目标手机精确匹配的 CANN Kit/工具链手动完成。OMG 转换成功并不能证明 OM 与手机兼容，也不能证明模型能完整运行在手机 NPU 上。
 
 四档实测结果与仍需完成的端侧验证边界见 [交付与验证报告](dev/delivery_report.html)。
 
@@ -115,11 +115,11 @@ Encoder 会预计算 decoder 六层 cross-attention 的 K/V。Decoder 将 12 个
 
 ### 4. 在 Linux 上转换为一对动态档位 OM
 
-必须使用与目标 HarmonyOS 设备匹配的 CANN/CANN Kit 转换工具链。不要猜测 `SOC_VERSION`，也不要因为 ATC 能接受参数就拿昇腾服务器 SoC 代替手机 SoC。先加载工具链环境，再运行：
+必须使用与目标 HarmonyOS 设备匹配的 CANN Kit OMG 转换工具链。不要猜测 `PLATFORM`，也不要因为 OMG 能接受参数就拿其他平台代替目标平台。先加载工具链环境，再运行：
 
 ```bash
 source /path/to/cann/set_env.sh
-SOC_VERSION='<CANN Kit 包/目标设备文档给出的精确 SoC>' \
+PLATFORM='<CANN Kit 包/目标设备文档给出的精确目标平台>' \
   ./scripts/convert_to_om.sh model_tools/output om_output
 ```
 
@@ -129,14 +129,14 @@ SOC_VERSION='<CANN Kit 包/目标设备文档给出的精确 SoC>' \
 om_output/
 ├── unirec_encoder.om      # 四个 H/W 档位
 ├── unirec_decoder.om      # 四个关联视觉 token 档位
-├── atc_encoder.log
-├── atc_decoder.log
+├── omg_encoder.log
+├── omg_decoder.log
 └── SHA256SUMS
 ```
 
 Encoder 动态维度为 `512,384;768,576;1024,768;1408,960`。Decoder 针对 `cross_k` 和 `cross_v` 的动态维度对为 `192,192;432,432;768,768;1320,1320`。浮点模型输入/输出编译为 FP16 以减少内存流量，token 与位置输入保持 INT32。
 
-如果手机 CANN Kit 包提供的是 `omg`/OMC，而不是兼容的 `atc`，应将同样的输入 shape、档位对、FP16 I/O 和精确目标平台参数迁移到该包的命令中。通用 Ascend Toolkit 生成的 OM 不会自动成为可用于手机 CANN Kit 的 OM。
+脚本默认调用 `omg`；如果可执行文件不在 `PATH` 中，可通过 `OMG_BIN` 指定。脚本使用 OMG 面向 ONNX 的 `--input_type` 和 `--output_type` 映射；由于 `--input_fp16_nodes` 对 ONNX 不生效，脚本不会使用该参数。通用 Ascend Toolkit 生成的 OM 不会自动成为可用于手机 CANN Kit 的 OM。
 
 ## 第二部分：原生 HarmonyOS App
 
@@ -215,10 +215,10 @@ hdc shell hilog | grep UniRecOM
 ## 重要限制
 
 - 本仓库证明的是改造后 ONNX 在 CPU ONNX Runtime 上正确。这里不声称 OM 转换或手机运行已经成功；它们需要你的 Linux CANN 工具链和物理目标设备。
-- ATC 文档明确指出，部分中间 shape 未固定的图不支持 `--dynamic_dims`。四档有限 gear 导出已尽量降低风险，但最终以目标编译器为准。
-- ATC 成功不等于手机兼容。App 会执行 `HMS_HiAICompatibility_CheckFromBuffer`、要求 `HIAI_F`、关闭回退，然后要求 `OH_NNCompilation_Build` 与所有 I/O 契约检查全部通过。
+- OMG 最多支持 16 个动态 shape 档位，转换能否成功仍取决于计算图与目标编译器；本项目使用 4 档。
+- OMG 成功不等于手机兼容。App 会执行 `HMS_HiAICompatibility_CheckFromBuffer`、要求 `HIAI_F`、关闭回退，然后要求 `OH_NNCompilation_Build` 与所有 I/O 契约检查全部通过。
 - OM 与硬件/工具链强绑定。为昇腾服务器/加速卡编译的模型通常不能假定可在麒麟手机 NPU 上运行。
-- FP16 编译可能改变边界 token 的 logits。应在设备上重新运行内置图片并比较开头。如果确有需要，并且精确工具链支持，可以设置 `PRECISION=must_keep_origin_dtype`，但需要接受更高内存与 NPU 覆盖下降的风险。
+- FP16 编译可能改变边界 token 的 logits。应在设备上重新运行内置图片并比较开头。如果确有需要，可以设置 `FLOAT_TYPE=FP32`，但需要接受更高内存与 NPU 覆盖下降的风险。
 - 模型与运行时的组合内存占用很大。HAP 打包限制、设备 RAM、连续共享内存分配和热限制仍可能阻止执行。
 - NNRt/CANN Kit 只能运行目标驱动实现的算子。模型可能成功转换却在兼容检查/Build 失败，也可能成功 Build 后在运行时失败。
 - 动态多档不等于任意动态 shape；只能接受声明的四个档位。
@@ -229,7 +229,7 @@ hdc shell hilog | grep UniRecOM
 model_tools/                 Python 导出、预处理、tokenizer、验证
 scripts/export_onnx.sh       可复现 ONNX 导出封装
 scripts/verify_onnx.sh       四档 ONNX 正确性检查
-scripts/convert_to_om.sh     Linux 手工 ATC 动态档位转换
+scripts/convert_to_om.sh     Linux 手工 OMG 动态档位转换
 harmony_app/                 原生 HarmonyOS CANN Kit/NNRt App
 dev/                         交付与验证报告
 ```
@@ -240,4 +240,4 @@ dev/                         交付与验证报告
 - [官方 UniRec ONNX 推理实现](https://github.com/Topdu/OpenOCR/blob/main/tools/infer_unirec_onnx.py)
 - [HarmonyOS Neural Network Runtime 介绍](https://gitee.com/openharmony/docs/blob/master/en/application-dev/ai/nnrt/Neural-Network-Runtime-Kit-Introduction.md)
 - [华为 CANN Kit 模型转换](https://developer.huawei.com/consumer/en/doc/harmonyos-guides/cannkit-model-conversion)
-- [ATC `--dynamic_dims` 文档](https://www.hiascend.com/document/detail/en/CANNCommunityEdition/900/devaids/atctool/atlasatcparam_16_0020.html)
+- [OMG 参数文档](https://developer.huawei.com/consumer/en/doc/hiai-guides/overall-parameter-0000001052966900)

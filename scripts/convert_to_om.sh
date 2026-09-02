@@ -3,14 +3,14 @@ set -euo pipefail
 
 usage() {
   cat >&2 <<'EOF'
-Usage: SOC_VERSION=<exact-target-soc> ./scripts/convert_to_om.sh <onnx-dir> <om-dir>
+Usage: PLATFORM=<exact-target-platform> ./scripts/convert_to_om.sh <onnx-dir> <om-dir>
 
 Required environment:
-  SOC_VERSION   Exact SoC accepted by the CANN Kit toolchain for the target device.
+  PLATFORM      Exact platform accepted by CANN Kit OMG for the target device.
 
 Optional environment:
-  ATC_BIN       ATC executable (default: atc)
-  PRECISION     allow_fp32_to_fp16 (default) or a toolchain-supported precision mode
+  OMG_BIN       OMG executable (default: omg)
+  FLOAT_TYPE    FP16 (default) or FP32 for floating-point model I/O and weights
 EOF
 }
 
@@ -18,18 +18,23 @@ if [[ $# -ne 2 ]]; then
   usage
   exit 2
 fi
-if [[ -z "${SOC_VERSION:-}" ]]; then
-  echo "SOC_VERSION is required; never compile a phone OM with a guessed server SoC." >&2
+if [[ -z "${PLATFORM:-}" ]]; then
+  echo "PLATFORM is required; use the exact target listed by the CANN Kit OMG toolchain." >&2
   usage
   exit 2
 fi
 
 onnx_dir=$1
 om_dir=$2
-atc_bin=${ATC_BIN:-atc}
-precision=${PRECISION:-allow_fp32_to_fp16}
+omg_bin=${OMG_BIN:-omg}
+float_type=${FLOAT_TYPE:-FP16}
 encoder_onnx="${onnx_dir%/}/unirec_encoder.onnx"
 decoder_onnx="${onnx_dir%/}/unirec_decoder.onnx"
+
+if [[ "$float_type" != FP16 && "$float_type" != FP32 ]]; then
+  echo "FLOAT_TYPE must be FP16 or FP32: $float_type" >&2
+  exit 2
+fi
 
 for required in "$encoder_onnx" "$decoder_onnx"; do
   if [[ ! -f "$required" ]]; then
@@ -37,40 +42,41 @@ for required in "$encoder_onnx" "$decoder_onnx"; do
     exit 2
   fi
 done
-if ! command -v "$atc_bin" >/dev/null 2>&1; then
-  echo "ATC executable not found: $atc_bin" >&2
+if ! command -v "$omg_bin" >/dev/null 2>&1; then
+  echo "OMG executable not found: $omg_bin" >&2
   exit 127
 fi
 
 mkdir -p "$om_dir"
 
-"$atc_bin" \
+"$omg_bin" \
   --framework=5 \
   --model="$encoder_onnx" \
   --output="${om_dir%/}/unirec_encoder" \
-  --soc_version="$SOC_VERSION" \
-  --input_format=ND \
+  --platform="$PLATFORM" \
   --input_shape="pixel_values:1,3,-1,-1" \
   --dynamic_dims="512,384;768,576;1024,768;1408,960" \
-  --input_fp16_nodes="pixel_values" \
-  --output_type=FP16 \
-  --precision_mode="$precision" 2>&1 | tee "${om_dir%/}/atc_encoder.log"
+  --input_type="pixel_values:$float_type" \
+  --output_type="cross_k:$float_type;cross_v:$float_type" \
+  --weight_data_type="$float_type" 2>&1 | tee "${om_dir%/}/omg_encoder.log"
 
 decoder_shape="input_ids:1,1;position_ids:1,1;self_attention_mask:1,1,1,2049"
 decoder_shape+=";cross_k:6,1,6,-1,128;cross_v:6,1,6,-1,128"
 decoder_shape+=";past_keys:6,1,6,2048,128;past_values:6,1,6,2048,128"
+decoder_input_type="input_ids:INT32;position_ids:INT32;self_attention_mask:$float_type"
+decoder_input_type+=";cross_k:$float_type;cross_v:$float_type"
+decoder_input_type+=";past_keys:$float_type;past_values:$float_type"
 
-"$atc_bin" \
+"$omg_bin" \
   --framework=5 \
   --model="$decoder_onnx" \
   --output="${om_dir%/}/unirec_decoder" \
-  --soc_version="$SOC_VERSION" \
-  --input_format=ND \
+  --platform="$PLATFORM" \
   --input_shape="$decoder_shape" \
   --dynamic_dims="192,192;432,432;768,768;1320,1320" \
-  --input_fp16_nodes="self_attention_mask;cross_k;cross_v;past_keys;past_values" \
-  --output_type=FP16 \
-  --precision_mode="$precision" 2>&1 | tee "${om_dir%/}/atc_decoder.log"
+  --input_type="$decoder_input_type" \
+  --output_type="logits:$float_type;new_keys:$float_type;new_values:$float_type" \
+  --weight_data_type="$float_type" 2>&1 | tee "${om_dir%/}/omg_decoder.log"
 
 test -s "${om_dir%/}/unirec_encoder.om"
 test -s "${om_dir%/}/unirec_decoder.om"

@@ -4,10 +4,10 @@
 
 This repository contains two deliverables:
 
-1. A reproducible UniRec-0.1B export pipeline that produces one dynamic-gear encoder ONNX and one dynamic-gear decoder ONNX, verifies all four gears, and provides a Linux ATC script for producing one dynamic-gear encoder OM and one dynamic-gear decoder OM.
+1. A reproducible UniRec-0.1B export pipeline that produces one dynamic-gear encoder ONNX and one dynamic-gear decoder ONNX, verifies all four gears, and provides a Linux OMG script for producing one dynamic-gear encoder OM and one dynamic-gear decoder OM.
 2. A native HarmonyOS app that loads those two OM files through CANN Kit/NNRt, selects a gear for the input image, runs encoder + autoregressive decoder inference, and decodes tokens locally.
 
-OM conversion is intentionally not claimed as completed here: it must be run in your Linux CANN Kit/toolchain environment for the exact target phone SoC. A successful ATC conversion is not proof that the OM is compatible with a phone or fully executable on its NPU.
+OM conversion is intentionally not claimed as completed here: it must be run in your Linux CANN Kit/toolchain environment for the exact target phone SoC. A successful OMG conversion is not proof that the OM is compatible with a phone or fully executable on its NPU.
 
 See the rendered [delivery and verification report](dev/delivery_report.html) for the measured four-gear results and the remaining device-side validation boundary.
 
@@ -115,11 +115,11 @@ The verifier checks both models with ONNX Checker, checks every K/V shape, runs 
 
 ### 4. Convert to a single dynamic-gear OM pair on Linux
 
-Use the CANN/CANN Kit conversion toolchain that matches the target HarmonyOS device. Do not guess `SOC_VERSION`, and do not substitute an Ascend server SoC merely because ATC accepts it. Source the toolchain environment first, then run:
+Use the CANN Kit OMG conversion toolchain that matches the target HarmonyOS device. Do not guess `PLATFORM`, and do not substitute another platform merely because OMG accepts it. Source the toolchain environment first, then run:
 
 ```bash
 source /path/to/cann/set_env.sh
-SOC_VERSION='<exact target SoC from your CANN Kit package/device documentation>' \
+PLATFORM='<exact target platform from your CANN Kit package/device documentation>' \
   ./scripts/convert_to_om.sh model_tools/output om_output
 ```
 
@@ -129,14 +129,14 @@ The script creates exactly:
 om_output/
 ├── unirec_encoder.om      # four H/W gears
 ├── unirec_decoder.om      # four linked visual-token gears
-├── atc_encoder.log
-├── atc_decoder.log
+├── omg_encoder.log
+├── omg_decoder.log
 └── SHA256SUMS
 ```
 
 Encoder dynamic dimensions are `512,384;768,576;1024,768;1408,960`. Decoder dynamic dimension pairs are `192,192;432,432;768,768;1320,1320` for `cross_k` and `cross_v`. Float model inputs/outputs are compiled as FP16 to reduce memory traffic, while token and position inputs remain INT32.
 
-If your mobile CANN Kit package supplies `omg`/OMC rather than a compatible `atc`, translate the same input shapes, gear pairs, FP16 I/O, and exact target platform into that package's command. An OM produced by a generic Ascend Toolkit is not automatically a mobile CANN Kit OM.
+The script invokes `omg` by default. Set `OMG_BIN` if the executable is not on `PATH`. It uses OMG's ONNX-aware `--input_type` and `--output_type` mappings; `--input_fp16_nodes` is intentionally not used because it has no effect for ONNX. An OM produced by a generic Ascend Toolkit is not automatically a mobile CANN Kit OM.
 
 ## Part 2: native HarmonyOS app
 
@@ -215,10 +215,10 @@ Keep the complete log from process start through either `DONE/SUCCESS` or the si
 ## Important limits
 
 - This repository proves the modified ONNX models on CPU ONNX Runtime. It does not claim that OM conversion or phone execution has succeeded; those require your Linux CANN toolchain and physical target.
-- ATC documents that some graphs with unfixed intermediate shapes cannot use `--dynamic_dims`. The finite four-gear export minimizes that risk, but your target compiler remains authoritative.
-- ATC success does not prove phone compatibility. The app calls `HMS_HiAICompatibility_CheckFromBuffer`, requires `HIAI_F`, disables fallback, then requires `OH_NNCompilation_Build` and all I/O contract checks to pass.
+- OMG supports at most 16 dynamic shape gears, and successful conversion still depends on the graph and target compiler. This project uses four gears.
+- OMG success does not prove phone compatibility. The app calls `HMS_HiAICompatibility_CheckFromBuffer`, requires `HIAI_F`, disables fallback, then requires `OH_NNCompilation_Build` and all I/O contract checks to pass.
 - OM files are hardware/toolchain-specific. A model compiled for an Ascend server/card generally cannot be assumed to run on a Kirin phone NPU.
-- FP16 compilation may change borderline token logits. Re-run the supplied image on-device and compare the prefix. If necessary, set `PRECISION=must_keep_origin_dtype` only if that mode is supported by your exact toolchain, accepting higher memory and possible NPU coverage loss.
+- FP16 compilation may change borderline token logits. Re-run the supplied image on-device and compare the prefix. If necessary, set `FLOAT_TYPE=FP32`, accepting higher memory and possible NPU coverage loss.
 - The combined model and runtime memory footprint is large. Packaging limits, device RAM, contiguous shared-memory allocation, and thermal constraints can still prevent execution.
 - NNRt/CANN Kit supports only the operators implemented by the target driver. A graph can convert but fail compatibility/build, and an OM can build but still fail at runtime.
 - Dynamic multi-gear execution is not unrestricted dynamic shape. Only the four declared gears are accepted.
@@ -229,7 +229,7 @@ Keep the complete log from process start through either `DONE/SUCCESS` or the si
 model_tools/                 Python export, preprocessing, tokenizer, verification
 scripts/export_onnx.sh       Reproducible ONNX export wrapper
 scripts/verify_onnx.sh       Four-gear ONNX correctness check
-scripts/convert_to_om.sh     Manual Linux ATC dynamic-gear conversion
+scripts/convert_to_om.sh     Manual Linux OMG dynamic-gear conversion
 harmony_app/                 Native HarmonyOS CANN Kit/NNRt app
 dev/                         Delivery and verification report
 ```
@@ -240,4 +240,4 @@ dev/                         Delivery and verification report
 - [Official UniRec ONNX inference implementation](https://github.com/Topdu/OpenOCR/blob/main/tools/infer_unirec_onnx.py)
 - [HarmonyOS Neural Network Runtime introduction](https://gitee.com/openharmony/docs/blob/master/en/application-dev/ai/nnrt/Neural-Network-Runtime-Kit-Introduction.md)
 - [Huawei CANN Kit model conversion](https://developer.huawei.com/consumer/en/doc/harmonyos-guides/cannkit-model-conversion)
-- [ATC `--dynamic_dims` documentation](https://www.hiascend.com/document/detail/en/CANNCommunityEdition/900/devaids/atctool/atlasatcparam_16_0020.html)
+- [OMG parameter documentation](https://developer.huawei.com/consumer/en/doc/hiai-guides/overall-parameter-0000001052966900)

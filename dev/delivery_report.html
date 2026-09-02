@@ -61,7 +61,7 @@ verify.png     76db2cf2ec8914c87bf2bc6e485d106198b47c96b9723adc3d0ca5e4799564f7<
   <section>
     <h2>端侧验证闭环</h2>
     <ol>
-      <li>Linux 设置精确 <code>SOC_VERSION</code>，运行 <code>scripts/convert_to_om.sh</code>。</li>
+      <li>Linux 设置精确 <code>PLATFORM</code>，使用 OMG 运行 <code>scripts/convert_to_om.sh</code>。</li>
       <li>将两份 OM 放入 README 指定的 rawfile 路径。</li>
       <li>DevEco Studio 构建 arm64 HAP，真机运行内置验证图。</li>
       <li>采集 <code>hdc shell hilog | grep UniRecOM</code>；应结束于 <code>DONE/SUCCESS</code>，或唯一一条终止性 <code>FATAL</code>。</li>
@@ -72,8 +72,8 @@ verify.png     76db2cf2ec8914c87bf2bc6e485d106198b47c96b9723adc3d0ca5e4799564f7<
   <section>
     <h2>已知边界</h2>
     <ul>
-      <li>部分含未固定中间 shape 的图不支持 ATC <code>--dynamic_dims</code>，最终以目标工具链为准。</li>
-      <li>通用 Ascend Toolkit 生成的 OM 不能假定可用于麒麟手机；必须采用匹配目标设备的移动 CANN Kit。</li>
+      <li>OMG 最多支持 16 个动态 shape 档位；本项目使用 4 档，最终转换结果仍以目标工具链为准。</li>
+      <li>通用 Ascend Toolkit 生成的 OM 不能假定可用于麒麟手机；必须采用匹配目标设备的移动 CANN Kit OMG。</li>
       <li>固定 2048 cache 提高可转换性，但会增加 decoder 计算和约 36 MiB 的双 cache FP16 内存（若保持 FP32 则约 72 MiB）。</li>
       <li>完整模型、cross K/V、cache 与工作区对设备 RAM 和连续共享内存要求较高。</li>
       <li>FP16 可能改变边界 logits，必须在目标设备重新验证“已处理”前缀。</li>
